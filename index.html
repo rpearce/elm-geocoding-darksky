@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Weather</title>
+
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1">
+    <meta name="author" content="Robert Pearce">
+    <meta name="description" content="Weather">
+  </head>
+  <body>
+    <script type="text/javascript" src="elm.js"></script>
+    <script>
+      (function(global) {
+        var node = document.createElement('div')
+        document.body.appendChild(node)
+        var app = Elm.Main.embed(node)
+        global.app = app
+      })(window)
+    </script>
+  </body>
+</html>
