@@ -1,11 +1,10 @@
 module Main exposing (..)
 
-import Http
 import Html exposing (Html, div, form, input, p, text)
 import Html.Attributes exposing (placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
-import Json.Decode exposing (float, list, string, Decoder)
-import Json.Decode.Pipeline exposing (decode, required)
+import Geocode
+import Weather
 
 
 -- Models
@@ -13,44 +12,8 @@ import Json.Decode.Pipeline exposing (decode, required)
 
 type alias Model =
     { address : String
-    , coords : Coords
-    , weather : Weather
-    }
-
-
-type alias Coords =
-    ( Float, Float )
-
-
-type alias GeoModel =
-    { status : String
-    , results : List GeoResult
-    }
-
-
-type alias GeoResult =
-    { geometry : GeoGeometry }
-
-
-type alias GeoGeometry =
-    { location : GeoLocation }
-
-
-type alias GeoLocation =
-    { lat : Float
-    , lng : Float
-    }
-
-
-type alias Weather =
-    { currently : WeatherCurrently
-    }
-
-
-type alias WeatherCurrently =
-    { icon : String
-    , summary : String
-    , temperature : Float
+    , geocode : Geocode.Model
+    , weather : Weather.Model
     }
 
 
@@ -62,107 +25,9 @@ init =
 initialModel : Model
 initialModel =
     { address = ""
-    , coords = ( 0, 0 )
-    , weather = initialWeather
+    , geocode = Geocode.initialModel
+    , weather = Weather.initialModel
     }
-
-
-initialGeoResult : GeoResult
-initialGeoResult =
-    { geometry =
-        { location =
-            { lat = 0
-            , lng = 0
-            }
-        }
-    }
-
-
-initialWeather : Weather
-initialWeather =
-    { currently = initialWeatherCurrently
-    }
-
-
-initialWeatherCurrently : WeatherCurrently
-initialWeatherCurrently =
-    { icon = "–"
-    , summary = "–"
-    , temperature = 0
-    }
-
-
-geocodingUrl : String -> String
-geocodingUrl address =
-    "http://localhost:5050/geocode/" ++ address
-
-
-weatherUrl : Coords -> String
-weatherUrl ( lat, lng ) =
-    "http://localhost:5051/forecast/"
-        ++ (toString lat)
-        ++ ","
-        ++ (toString lng)
-
-
-
--- Commands
-
-
-fetchGeocoding : String -> Cmd Msg
-fetchGeocoding address =
-    Http.get (geocodingUrl address) decodeGeo
-        |> Http.send ReceiveGeocoding
-
-
-fetchWeather : Coords -> Cmd Msg
-fetchWeather coords =
-    Http.get (weatherUrl coords) decodeWeather
-        |> Http.send ReceiveWeather
-
-
-
--- Decoders
-
-
-decodeGeo : Decoder GeoModel
-decodeGeo =
-    decode GeoModel
-        |> required "status" string
-        |> required "results" (list decodeGeoResult)
-
-
-decodeGeoResult : Decoder GeoResult
-decodeGeoResult =
-    decode GeoResult
-        |> required "geometry" decodeGeoGeometry
-
-
-decodeGeoGeometry : Decoder GeoGeometry
-decodeGeoGeometry =
-    decode GeoGeometry
-        |> required "location" decodeGeoLocation
-
-
-decodeGeoLocation : Decoder GeoLocation
-decodeGeoLocation =
-    decode GeoLocation
-        |> required "lat" float
-        |> required "lng" float
-
-
-decodeWeather : Decoder Weather
-decodeWeather =
-    decode Weather
-        |> required "currently" decodeWeatherCurrently
-
-
-decodeWeatherCurrently : Decoder WeatherCurrently
-decodeWeatherCurrently =
-    decode WeatherCurrently
-        |> required "icon" string
-        |> required "summary" string
-        |> required "temperature" float
 
 
 
@@ -181,8 +46,8 @@ subscriptions model =
 type Msg
     = UpdateAddress String
     | SendAddress
-    | ReceiveGeocoding (Result Http.Error GeoModel)
-    | ReceiveWeather (Result Http.Error Weather)
+    | GeocodeMsg Geocode.Msg
+    | WeatherMsg Weather.Msg
     | NoOp
 
 
@@ -199,40 +64,30 @@ update msg model =
             )
 
         SendAddress ->
-            ( model, fetchGeocoding model.address )
-
-        ReceiveGeocoding (Ok { results, status }) ->
-            let
-                result =
-                    case status of
-                        "OK" ->
-                            results
-                                |> List.head
-                                |> Maybe.withDefault initialGeoResult
-
-                        _ ->
-                            initialGeoResult
-
-                newModel =
-                    { model
-                        | coords =
-                            ( result.geometry.location.lat
-                            , result.geometry.location.lng
-                            )
-                    }
-            in
-                ( newModel, fetchWeather newModel.coords )
-
-        ReceiveGeocoding (Err _) ->
-            ( model, Cmd.none )
-
-        ReceiveWeather (Ok resp) ->
-            ( { model | weather = { currently = resp.currently } }
-            , Cmd.none
+            ( { model
+                | geocode = initialModel.geocode
+                , weather = initialModel.weather
+              }
+            , Cmd.map GeocodeMsg (Geocode.fetch model.address)
             )
 
-        ReceiveWeather (Err _) ->
-            ( model, Cmd.none )
+        GeocodeMsg gmsg ->
+            let
+                newModel =
+                    { model
+                        | geocode = Geocode.update gmsg model.geocode
+                    }
+            in
+                ( newModel
+                , Cmd.map WeatherMsg (Weather.fetch newModel.geocode.coords)
+                )
+
+        WeatherMsg wmsg ->
+            ( { model
+                | weather = Weather.update wmsg model.weather
+              }
+            , Cmd.none
+            )
 
         _ ->
             ( model, Cmd.none )
@@ -254,8 +109,8 @@ view model =
                 ]
                 []
             ]
-        , p [] [ text ("Coords: " ++ (toString model.coords)) ]
-        , p [] [ text ("Weather: " ++ (toString (round model.weather.currently.temperature))) ]
+        , Html.map GeocodeMsg (Geocode.view model.geocode)
+        , Html.map WeatherMsg (Weather.view model.weather)
         ]
 
 
